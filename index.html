@@ -8,7 +8,6 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <!-- 更新為較新版本的 Babel Standalone 以支援現代 JavaScript 語法 -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
   <style>
@@ -45,8 +44,25 @@
       100% { background-position: -200% center; }
     }
 
+    /* 燈籠鐘擺搖曳動畫 */
+    @keyframes swing {
+      0% { transform: rotate(-4deg); }
+      50% { transform: rotate(4deg); }
+      100% { transform: rotate(-4deg); }
+    }
+
     .animate-breathe {
       animation: breathe 8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+
+    .lantern-left {
+      transform-origin: 50% 0%;
+      animation: swing 7s ease-in-out infinite;
+    }
+
+    .lantern-right {
+      transform-origin: 50% 0%;
+      animation: swing 5.5s ease-in-out infinite reverse;
     }
 
     /* 玻璃擬態與紅包質感 */
@@ -110,6 +126,46 @@
       return svgs[name] || null;
     };
 
+    // 獨立的燈籠 SVG 組件
+    const Lantern = ({ className }) => (
+      <div className={`absolute pointer-events-none z-0 ${className}`}>
+        <svg viewBox="0 0 100 240" className="w-full h-full drop-shadow-[0_12px_20px_rgba(220,38,38,0.5)]">
+          {/* 上方吊線 */}
+          <line x1="50" y1="0" x2="50" y2="35" stroke="#FBBF24" strokeWidth="2" opacity="0.8"/>
+          
+          {/* 燈籠上蓋 */}
+          <path d="M35 35 L 65 35 L 70 42 L 30 42 Z" fill="#F59E0B" />
+          <rect x="42" y="32" width="16" height="3" fill="#D97706" />
+
+          {/* 燈籠主體 (透出微光) */}
+          <path d="M20 42 Q -5 95 20 148 L 80 148 Q 105 95 80 42 Z" fill="url(#lanternRedGrad)"/>
+          
+          {/* 燈籠金線骨架 */}
+          <path d="M35 42 Q 20 95 35 148" stroke="#FDE047" strokeWidth="1" fill="none" opacity="0.6"/>
+          <path d="M50 42 L 50 148" stroke="#FDE047" strokeWidth="1" fill="none" opacity="0.6"/>
+          <path d="M65 42 Q 80 95 65 148" stroke="#FDE047" strokeWidth="1" fill="none" opacity="0.6"/>
+
+          {/* 燈籠下蓋 */}
+          <path d="M30 148 L 70 148 L 65 155 L 35 155 Z" fill="#F59E0B" />
+          <rect x="42" y="155" width="16" height="4" fill="#B45309" />
+
+          {/* 底部流蘇 */}
+          <line x1="45" y1="159" x2="40" y2="210" stroke="#EF4444" strokeWidth="1.5" opacity="0.9"/>
+          <line x1="50" y1="159" x2="50" y2="220" stroke="#EF4444" strokeWidth="1.5" opacity="0.9"/>
+          <line x1="55" y1="159" x2="60" y2="210" stroke="#EF4444" strokeWidth="1.5" opacity="0.9"/>
+
+          {/* 漸層定義 */}
+          <defs>
+            <linearGradient id="lanternRedGrad" x1="0" y1="42" x2="100" y2="148" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="#ef4444" />
+              <stop offset="50%" stopColor="#b91c1c" />
+              <stop offset="100%" stopColor="#450a0a" />
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+    );
+
     // 背景動畫系統
     const AtmosphereBackground = () => {
       // 隨機產生金箔粒子的初始位置與延遲
@@ -127,10 +183,15 @@
           {/* 深度暗紅徑向漸層 */}
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,_rgba(127,29,29,0.4)_0%,_rgba(0,0,0,1)_70%)]"></div>
           
-          {/* 呼吸的馬年書法浮水印 (使用 SVG Path 勾勒古典感) */}
-          <div className="absolute top-[10%] -right-[20%] w-[120%] opacity-10 animate-breathe text-red-600">
+          {/* 左側大燈籠 */}
+          <Lantern className="left-[-15px] top-[-20px] w-40 opacity-90 lantern-left" />
+          
+          {/* 右側小燈籠 */}
+          <Lantern className="right-[-5px] top-[-10px] w-28 opacity-70 lantern-right" />
+
+          {/* 呼吸的馬年書法浮水印 */}
+          <div className="absolute top-[15%] -right-[15%] w-[120%] opacity-[0.08] animate-breathe text-red-500">
             <svg viewBox="0 0 200 200" fill="currentColor">
-              {/* 簡化的書法「馬」字輪廓，營造氛圍 */}
               <path d="M50,40 Q70,30 90,40 Q100,50 90,70 Q70,90 50,80 Z" opacity="0.3"/>
               <path d="M100,20 Q130,10 160,30 Q180,60 150,90 Q120,110 90,80 Z" opacity="0.5"/>
               <path d="M70,100 Q120,90 150,130 Q170,170 120,180 Q80,190 50,150 Z" opacity="0.7"/>
@@ -295,8 +356,8 @@
           </div>
 
           {/* Header 區塊：中國風標題 */}
-          <header className="pt-[calc(var(--safe-top)+1rem)] pb-4 px-6 relative z-10">
-            <div className="flex justify-between items-end">
+          <header className="pt-[calc(var(--safe-top)+1rem)] pb-4 px-6 relative z-10 pointer-events-none">
+            <div className="flex justify-between items-end pointer-events-auto">
               <div>
                 <p className="text-red-400 text-[10px] font-bold tracking-[0.3em] mb-1">歲次丙午．迎春接福</p>
                 <h1 className="text-2xl font-black text-gold-gradient tracking-widest drop-shadow-md font-serif">
