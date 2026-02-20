@@ -1,353 +1,466 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Trophy, History, Gamepad2, Plus, Minus, 
-  Zap, AlertCircle, Undo2, Share2, Info, X, RefreshCw 
-} from 'lucide-react';
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>大老二記分板</title>
+  
+  <!-- 引入 Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- 引入 React 與 ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- 引入 Babel 來在瀏覽器即時編譯 JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-const App = () => {
-  const INITIAL_PLAYERS = [
-    { id: 'papa', name: '爸爸', score: 0 },
-    { id: 'mama', name: '媽媽', score: 0 },
-    { id: 'bro', name: '哥哥', score: 0 },
-    { id: 'sis', name: '妹妹', score: 0 },
-  ];
-
-  const [players, setPlayers] = useState(INITIAL_PLAYERS);
-  const [history, setHistory] = useState([]);
-  const [activeTab, setActiveTab] = useState('play');
-  const [currentCards, setCurrentCards] = useState({ papa: 0, mama: 0, bro: 0, sis: 0 });
-  const [twoCounts, setTwoCounts] = useState({ papa: 0, mama: 0, bro: 0, sis: 0 });
-  const [winnerTwoCount, setWinnerTwoCount] = useState(0);
-  const [errorMsg, setErrorMsg] = useState('');
-  const [showCopySuccess, setShowCopySuccess] = useState(false);
-  const [showRules, setShowRules] = useState(false);
-
-  // 讀取進度或網址匯入
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const encodedData = params.get('data');
-    
-    if (encodedData) {
-      try {
-        const decoded = JSON.parse(atob(decodeURIComponent(encodedData)));
-        if (window.confirm(`發現匯入資料（來自：${decoded.time}），是否覆蓋目前進度？`)) {
-          setPlayers(decoded.players);
-          setHistory(decoded.history);
-          window.history.replaceState({}, document.title, window.location.pathname);
-        }
-      } catch (e) {
-        console.error("匯入失敗", e);
-      }
-    } else {
-      const savedPlayers = localStorage.getItem('cny_big2_players');
-      const savedHistory = localStorage.getItem('cny_big2_history');
-      if (savedPlayers) setPlayers(JSON.parse(savedPlayers));
-      if (savedHistory) setHistory(JSON.parse(savedHistory));
+  <style>
+    :root {
+      /* 蘋果手機安全區預留 */
+      --sat: env(safe-area-inset-top);
+      --sab: env(safe-area-inset-bottom);
     }
-  }, []);
-
-  // 自動存檔
-  useEffect(() => {
-    localStorage.setItem('cny_big2_players', JSON.stringify(players));
-    localStorage.setItem('cny_big2_history', JSON.stringify(history));
-  }, [players, history]);
-
-  // 產生分享連結
-  const exportData = () => {
-    const data = { players, history, time: new Date().toLocaleString() };
-    const url = `${window.location.origin}${window.location.pathname}?data=${encodeURIComponent(btoa(JSON.stringify(data)))}`;
-    
-    const textArea = document.createElement("textarea");
-    textArea.value = url;
-    document.body.appendChild(textArea);
-    textArea.select();
-    try {
-      document.execCommand('copy');
-      setShowCopySuccess(true);
-      setTimeout(() => setShowCopySuccess(false), 3000);
-    } catch (err) {
-      console.error("複製失敗", err);
+    body {
+      background-color: #000;
+      -webkit-tap-highlight-color: transparent;
+      margin: 0;
+      overflow: hidden; /* 防止最外層滑動 */
     }
-    document.body.removeChild(textArea);
-  };
-
-  // 控制卡片數量
-  const handleCardChange = (id, delta) => {
-    const newVal = Math.max(0, Math.min(13, currentCards[id] + delta));
-    setCurrentCards(prev => ({ ...prev, [id]: newVal }));
-    if (newVal === 0) setTwoCounts(prev => ({ ...prev, [id]: 0 }));
-  };
-
-  // 切換老二數量
-  const toggleTwoCount = (id) => {
-    if (currentCards[id] === 0) return;
-    setTwoCounts(prev => ({ ...prev, [id]: (prev[id] + 1) % 5 }));
-  };
-
-  // 結算核心邏輯
-  const calculateRound = () => {
-    const playerIds = ['papa', 'mama', 'bro', 'sis'];
-    const winners = playerIds.filter(id => currentCards[id] === 0);
-    
-    if (winners.length !== 1) {
-      setErrorMsg("注意：必須剛好有一人脫手（填 0 張）才能結算！");
-      setTimeout(() => setErrorMsg(''), 3000);
-      return;
+    .pb-safe {
+      padding-bottom: calc(var(--sab) + 1rem);
     }
+    /* 隱藏滾動條但保留滾動功能 (給戰報與歷史紀錄用) */
+    .custom-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .custom-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    /* 玻璃擬態質感 */
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.03);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    /* 按鈕點擊的回饋動畫 */
+    .active-scale:active {
+      transform: scale(0.96);
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
 
-    const winnerId = winners[0];
-    let totalPot = 0;
-    const roundScores = {};
+  <script type="text/babel">
+    const { useState, useEffect } = React;
 
-    playerIds.forEach(id => {
-      if (id === winnerId) {
-        roundScores[id] = 0;
-      } else {
-        let p = currentCards[id];
-        if (p >= 8) p *= 2; // 8張以上翻倍
-        if (twoCounts[id] > 0) p *= Math.pow(2, twoCounts[id]); // 輸家有老二
-        if (winnerTwoCount > 0) p *= Math.pow(2, winnerTwoCount); // 贏家老二結尾
+    // 自訂圖示元件
+    const Icon = ({ name, className = "w-5 h-5" }) => {
+      const svgs = {
+        trophy: <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>,
+        history: <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>,
+        gamepad: <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="6" x2="10" y1="12" y2="12"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="15" x2="15.01" y1="13" y2="13"/><line x1="18" x2="18.01" y1="11" y2="11"/><rect width="20" height="12" x="2" y="6" rx="2"/></svg>,
+        plus: <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>,
+        minus: <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/></svg>,
+        zap: <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>,
+        alert: <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>,
+        undo: <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg>,
+        share: <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></svg>,
+        info: <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>,
+        x: <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>,
+        refresh: <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+      };
+      return svgs[name] || null;
+    };
+
+    // 馬年動態 SVG 背景組件
+    const FestiveBackground = () => (
+      <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
+        {/* 深色漸層底 (紅黑金) */}
+        <div className="absolute inset-0 bg-gradient-to-b from-red-950 via-neutral-950 to-black opacity-95"></div>
         
-        roundScores[id] = -p;
-        totalPot += p;
-      }
-    });
+        {/* 馬年古典幾何印花 */}
+        <svg className="absolute -right-20 top-5 w-[450px] h-[450px] text-red-600/15 animate-pulse" viewBox="0 0 200 200" style={{ animationDuration: '6s' }}>
+          <circle cx="100" cy="100" r="80" fill="none" stroke="currentColor" strokeWidth="1" strokeDasharray="3 6" />
+          <circle cx="100" cy="100" r="90" fill="none" stroke="currentColor" strokeWidth="0.5" />
+          <text x="100" y="105" fontSize="85" fontFamily="serif" fill="currentColor" textAnchor="middle" dominantBaseline="middle" opacity="0.6">馬</text>
+        </svg>
 
-    roundScores[winnerId] = totalPot;
+        {/* 光影折射修飾 */}
+        <div className="absolute top-0 right-0 w-64 h-64 bg-red-800/20 rounded-full blur-[80px]"></div>
+        <div className="absolute bottom-20 left-0 w-48 h-48 bg-amber-700/10 rounded-full blur-[60px]"></div>
 
-    setPlayers(prev => prev.map(p => ({ ...p, score: p.score + roundScores[p.id] })));
-    setHistory([{
-      id: Date.now(),
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      scores: roundScores,
-      isExtreme: winnerTwoCount > 0
-    }, ...history]);
-
-    // 歸零桌面狀態
-    setCurrentCards({ papa: 0, mama: 0, bro: 0, sis: 0 });
-    setTwoCounts({ papa: 0, mama: 0, bro: 0, sis: 0 });
-    setWinnerTwoCount(0);
-    setActiveTab('scores');
-  };
-
-  const undoLast = () => {
-    if (history.length === 0) return;
-    const [last, ...rest] = history;
-    setPlayers(prev => prev.map(p => ({ ...p, score: p.score - last.scores[p.id] })));
-    setHistory(rest);
-  };
-
-  const resetAll = () => {
-    if(window.confirm("確定要將全家人的帳目歸零，重新開始嗎？")) {
-      setPlayers(INITIAL_PLAYERS);
-      setHistory([]);
-      setCurrentCards({ papa: 0, mama: 0, bro: 0, sis: 0 });
-      setTwoCounts({ papa: 0, mama: 0, bro: 0, sis: 0 });
-      setWinnerTwoCount(0);
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-neutral-900 flex items-start sm:items-center justify-center font-sans">
-      {/* 限制最大寬度，讓電腦版看起來像手機 App，手機版自然滿版 */}
-      <div className="w-full sm:max-w-md bg-neutral-950 min-h-screen sm:min-h-[85vh] sm:rounded-3xl sm:shadow-2xl overflow-hidden flex flex-col relative sm:border border-white/10">
-        
-        {/* 通知提示框 */}
-        {showCopySuccess && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-emerald-500 text-white px-4 py-2 rounded-full text-sm font-bold shadow-lg animate-bounce">
-            記帳連結已複製，快去群組收錢！
-          </div>
-        )}
-        {errorMsg && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-rose-500 text-white w-[90%] px-4 py-3 rounded-2xl text-sm font-bold shadow-lg flex items-center gap-2">
-            <AlertCircle className="w-5 h-5 shrink-0" />
-            {errorMsg}
-          </div>
-        )}
-
-        {/* 頂部 Header */}
-        <div className="pt-10 pb-4 px-6 bg-gradient-to-b from-red-900/40 to-transparent flex justify-between items-center relative z-10">
-          <div>
-            <h1 className="text-2xl font-black text-white tracking-wider flex items-center gap-2">
-              {activeTab === 'scores' && '家族戰報'}
-              {activeTab === 'play' && '上桌記分'}
-              {activeTab === 'history' && '查閱舊帳'}
-            </h1>
-            <p className="text-red-400 text-xs font-bold tracking-widest mt-1">NEW YEAR BIG 2</p>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => setShowRules(true)} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center active:scale-95 transition-transform">
-              <Info className="w-5 h-5 text-white/70" />
-            </button>
-            <button onClick={exportData} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center active:scale-95 transition-transform">
-              <Share2 className="w-5 h-5 text-white/70" />
-            </button>
-          </div>
-        </div>
-
-        {/* 主內容區 - 讓中間可滑動，保留底部導航空間 */}
-        <div className="flex-1 overflow-y-auto px-6 pb-28 custom-scrollbar">
-          
-          {/* --- Tab: 總分 --- */}
-          {activeTab === 'scores' && (
-            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
-              {[...players].sort((a, b) => b.score - a.score).map((p, idx) => (
-                <div key={p.id} className="bg-white/5 rounded-2xl p-4 flex items-center justify-between border border-white/5">
-                  <div className="flex items-center gap-4">
-                    <div className={`w-8 text-center font-black ${idx === 0 ? 'text-amber-400 text-2xl' : 'text-white/40 text-lg'}`}>
-                      {idx === 0 ? <Trophy className="w-6 h-6 mx-auto" /> : idx + 1}
-                    </div>
-                    <div className="text-lg font-bold text-white">{p.name}</div>
-                  </div>
-                  <div className={`text-2xl font-black ${p.score === 0 ? 'text-white/30' : p.score > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {p.score > 0 ? `+${p.score}` : p.score}
-                  </div>
-                </div>
-              ))}
-              <button onClick={resetAll} className="mt-8 mx-auto flex items-center gap-2 text-white/20 text-xs font-bold hover:text-rose-400 transition-colors">
-                <RefreshCw className="w-4 h-4" /> 重新洗牌歸零
-              </button>
-            </div>
-          )}
-
-          {/* --- Tab: 記分 --- */}
-          {activeTab === 'play' && (
-            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-              <div className="space-y-3">
-                {INITIAL_PLAYERS.map(base => {
-                  const id = base.id;
-                  const p = players.find(x => x.id === id);
-                  return (
-                    <div key={id} className="bg-white/5 rounded-2xl p-4 flex items-center justify-between border border-white/5">
-                      <div className="flex flex-col gap-2">
-                        <span className="text-white font-bold text-lg">{p.name}</span>
-                        <button 
-                          onClick={() => toggleTwoCount(id)}
-                          className={`px-3 py-1 rounded-full font-bold text-[10px] transition-all w-max flex items-center gap-1 ${twoCounts[id] > 0 ? 'bg-amber-500 text-red-950' : 'bg-white/10 text-white/40'}`}
-                        >
-                          {twoCounts[id] > 0 ? <Zap className="w-3 h-3" /> : null}
-                          {twoCounts[id] > 0 ? `老二 x ${twoCounts[id]}` : '沒老二'}
-                        </button>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <button onClick={() => handleCardChange(id, -1)} className="w-12 h-12 flex items-center justify-center bg-white/10 rounded-xl active:scale-95 text-white/70">
-                          <Minus className="w-5 h-5" />
-                        </button>
-                        <div className="w-8 text-center text-2xl font-black text-white">{currentCards[id]}</div>
-                        <button onClick={() => handleCardChange(id, 1)} className="w-12 h-12 flex items-center justify-center bg-white/10 rounded-xl active:scale-95 text-white/70">
-                          <Plus className="w-5 h-5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="pt-2 border-t border-white/10">
-                <button 
-                  onClick={() => setWinnerTwoCount(v => (v + 1) % 5)}
-                  className={`w-full py-4 rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-all border mb-4 ${winnerTwoCount > 0 ? 'bg-amber-500/20 text-amber-300 border-amber-400/50' : 'bg-black/20 text-white/40 border-white/10'}`}
-                >
-                  <Zap className="w-4 h-4" />
-                  {winnerTwoCount > 0 ? `贏家用老二結尾 x ${winnerTwoCount} (全場翻倍)` : '贏家一般牌型結尾 (無加成)'}
-                </button>
-                <button 
-                  onClick={calculateRound}
-                  className="w-full py-4 rounded-2xl font-black text-lg bg-red-600 hover:bg-red-500 text-white shadow-[0_0_20px_rgba(220,38,38,0.4)] active:scale-95 transition-all"
-                >
-                  結算收錢
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* --- Tab: 歷史 --- */}
-          {activeTab === 'history' && (
-            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
-              {history.length > 0 && (
-                <button onClick={() => { if(window.confirm("確定要收回上一局嗎？")) undoLast(); }} className="w-full py-3 mb-2 rounded-xl bg-amber-500/10 text-amber-400 font-bold text-sm border border-amber-500/20 active:scale-95 flex justify-center items-center gap-2">
-                  <Undo2 className="w-4 h-4" /> 撤銷最新一局
-                </button>
-              )}
-              {history.length === 0 ? (
-                <div className="text-center text-white/30 py-10 font-bold">目前桌上很乾淨，還沒有對戰紀錄</div>
-              ) : (
-                history.map(record => (
-                  <div key={record.id} className="bg-white/5 rounded-2xl p-4 border border-white/5">
-                    <div className="flex justify-between items-center mb-3 pb-3 border-b border-white/10">
-                      <span className="text-white/40 text-xs font-bold">{record.time}</span>
-                      {record.isExtreme && <span className="bg-rose-500/20 text-rose-400 text-[10px] px-2 py-1 rounded font-black">老二結尾加成</span>}
-                    </div>
-                    <div className="grid grid-cols-4 gap-2 text-center">
-                      {INITIAL_PLAYERS.map(p => {
-                        const s = record.scores[p.id];
-                        return (
-                          <div key={p.id}>
-                            <div className="text-white/40 text-xs mb-1">{p.name}</div>
-                            <div className={`font-black ${s === 0 ? 'text-white/20' : s > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                              {s > 0 ? `+${s}` : s}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* 底部導航列 */}
-        <div className="absolute bottom-0 w-full bg-neutral-950/80 backdrop-blur-xl border-t border-white/10 pb-safe">
-          <div className="flex justify-around items-center p-4">
-            <button onClick={() => setActiveTab('scores')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'scores' ? 'text-amber-400' : 'text-white/40'}`}>
-              <Trophy className="w-6 h-6" />
-              <span className="text-[10px] font-bold">戰報</span>
-            </button>
-            <button onClick={() => setActiveTab('play')} className={`flex flex-col items-center justify-center w-14 h-14 rounded-full -mt-8 shadow-lg transition-transform ${activeTab === 'play' ? 'bg-red-600 text-white scale-110' : 'bg-neutral-800 text-white/40'}`}>
-              <Gamepad2 className="w-6 h-6" />
-            </button>
-            <button onClick={() => setActiveTab('history')} className={`flex flex-col items-center gap-1 transition-colors ${activeTab === 'history' ? 'text-amber-400' : 'text-white/40'}`}>
-              <History className="w-6 h-6" />
-              <span className="text-[10px] font-bold">明細</span>
-            </button>
-          </div>
-        </div>
-
-        {/* 規則解說 Modal */}
-        {showRules && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center px-6">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowRules(false)} />
-            <div className="bg-neutral-900 border border-white/10 p-6 rounded-3xl w-full relative z-10 shadow-2xl">
-              <button onClick={() => setShowRules(false)} className="absolute top-4 right-4 text-white/40 hover:text-white">
-                <X className="w-6 h-6" />
-              </button>
-              <h3 className="text-xl font-black text-white mb-4">記分規則解說</h3>
-              <div className="space-y-4 text-sm text-white/70">
-                <div>
-                  <strong className="text-white block mb-1">🎯 基礎張數</strong>
-                  1-7 張維持原分數，8 張以上（含）直接翻倍 (x2)。
-                </div>
-                <div>
-                  <strong className="text-white block mb-1">🃏 輸家含老二</strong>
-                  結算時手上有老二，每 1 張翻 1 倍。例如：有 2 張老二就是 x4 倍。
-                </div>
-                <div>
-                  <strong className="text-rose-400 block mb-1">⚡ 贏家老二脫手 (大招)</strong>
-                  若贏家最後一牌打出老二，全場輸家總分再翻倍。這常常是傾家蕩產的關鍵。
-                </div>
-              </div>
-              <button onClick={() => setShowRules(false)} className="w-full mt-6 bg-white/10 py-3 rounded-xl font-bold text-white active:bg-white/20">
-                我懂了
-              </button>
-            </div>
-          </div>
-        )}
-
+        {/* 漂浮金光微粒 */}
+        <div className="absolute top-1/4 left-1/4 w-1.5 h-1.5 bg-amber-400 rounded-full shadow-[0_0_8px_rgba(251,191,36,0.9)] animate-ping" style={{ animationDuration: '3s' }}></div>
+        <div className="absolute top-2/3 right-1/4 w-1 h-1 bg-amber-500 rounded-full shadow-[0_0_8px_rgba(251,191,36,0.9)] animate-ping" style={{ animationDuration: '4.5s', animationDelay: '1s' }}></div>
       </div>
-    </div>
-  );
-};
+    );
 
-export default App;
+    const App = () => {
+      const INITIAL_PLAYERS = [
+        { id: 'papa', name: '爸爸', score: 0 },
+        { id: 'mama', name: '媽媽', score: 0 },
+        { id: 'bro', name: '哥哥', score: 0 },
+        { id: 'sis', name: '妹妹', score: 0 },
+      ];
+
+      const [players, setPlayers] = useState(INITIAL_PLAYERS);
+      const [history, setHistory] = useState([]);
+      const [activeTab, setActiveTab] = useState('play');
+      const [currentCards, setCurrentCards] = useState({ papa: 0, mama: 0, bro: 0, sis: 0 });
+      const [twoCounts, setTwoCounts] = useState({ papa: 0, mama: 0, bro: 0, sis: 0 });
+      const [winnerTwoCount, setWinnerTwoCount] = useState(0);
+      const [errorMsg, setErrorMsg] = useState('');
+      const [showCopySuccess, setShowCopySuccess] = useState(false);
+      const [showRules, setShowRules] = useState(false);
+
+      useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const encodedData = params.get('data');
+        
+        if (encodedData) {
+          try {
+            const decoded = JSON.parse(atob(decodeURIComponent(encodedData)));
+            if (window.confirm(`發現網址夾帶的歷史資料（時間：${decoded.time}），確定要覆蓋你目前的進度嗎？`)) {
+              setPlayers(decoded.players);
+              setHistory(decoded.history);
+              window.history.replaceState({}, document.title, window.location.pathname);
+            }
+          } catch (e) {
+            console.error("資料匯入失敗", e);
+          }
+        } else {
+          const savedPlayers = localStorage.getItem('cny_big2_players');
+          const savedHistory = localStorage.getItem('cny_big2_history');
+          if (savedPlayers) setPlayers(JSON.parse(savedPlayers));
+          if (savedHistory) setHistory(JSON.parse(savedHistory));
+        }
+      }, []);
+
+      useEffect(() => {
+        localStorage.setItem('cny_big2_players', JSON.stringify(players));
+        localStorage.setItem('cny_big2_history', JSON.stringify(history));
+      }, [players, history]);
+
+      const exportData = () => {
+        const data = { players, history, time: new Date().toLocaleString() };
+        const url = `${window.location.origin}${window.location.pathname}?data=${encodeURIComponent(btoa(JSON.stringify(data)))}`;
+        
+        const textArea = document.createElement("textarea");
+        textArea.value = url;
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+          document.execCommand('copy');
+          setShowCopySuccess(true);
+          setTimeout(() => setShowCopySuccess(false), 3000);
+        } catch (err) {
+          console.error("複製失敗", err);
+        }
+        document.body.removeChild(textArea);
+      };
+
+      const handleCardChange = (id, delta) => {
+        const newVal = Math.max(0, Math.min(13, currentCards[id] + delta));
+        setCurrentCards(prev => ({ ...prev, [id]: newVal }));
+        if (newVal === 0) setTwoCounts(prev => ({ ...prev, [id]: 0 }));
+      };
+
+      const toggleTwoCount = (id) => {
+        if (currentCards[id] === 0) return;
+        setTwoCounts(prev => ({ ...prev, [id]: (prev[id] + 1) % 5 }));
+      };
+
+      const calculateRound = () => {
+        const playerIds = ['papa', 'mama', 'bro', 'sis'];
+        const winners = playerIds.filter(id => currentCards[id] === 0);
+        
+        if (winners.length !== 1) {
+          setErrorMsg("結算條件不足：必須剛好有一人脫手（卡片清空為0）！");
+          setTimeout(() => setErrorMsg(''), 3000);
+          return;
+        }
+
+        const winnerId = winners[0];
+        let totalPot = 0;
+        const roundScores = {};
+
+        playerIds.forEach(id => {
+          if (id === winnerId) {
+            roundScores[id] = 0;
+          } else {
+            let p = currentCards[id];
+            if (p >= 8) p *= 2; 
+            if (twoCounts[id] > 0) p *= Math.pow(2, twoCounts[id]); 
+            if (winnerTwoCount > 0) p *= Math.pow(2, winnerTwoCount); 
+            
+            roundScores[id] = -p;
+            totalPot += p;
+          }
+        });
+
+        roundScores[winnerId] = totalPot;
+
+        setPlayers(prev => prev.map(p => ({ ...p, score: p.score + roundScores[p.id] })));
+        setHistory([{
+          id: Date.now(),
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          scores: roundScores,
+          isExtreme: winnerTwoCount > 0
+        }, ...history]);
+
+        setCurrentCards({ papa: 0, mama: 0, bro: 0, sis: 0 });
+        setTwoCounts({ papa: 0, mama: 0, bro: 0, sis: 0 });
+        setWinnerTwoCount(0);
+        setActiveTab('scores');
+      };
+
+      const undoLast = () => {
+        if (history.length === 0) return;
+        const [last, ...rest] = history;
+        setPlayers(prev => prev.map(p => ({ ...p, score: p.score - last.scores[p.id] })));
+        setHistory(rest);
+      };
+
+      const resetAll = () => {
+        if(window.confirm("確定要把全家人的帳目清空，重新開始新局嗎？")) {
+          setPlayers(INITIAL_PLAYERS);
+          setHistory([]);
+          setCurrentCards({ papa: 0, mama: 0, bro: 0, sis: 0 });
+          setTwoCounts({ papa: 0, mama: 0, bro: 0, sis: 0 });
+          setWinnerTwoCount(0);
+        }
+      };
+
+      return (
+        <div className="h-[100dvh] w-full bg-black flex sm:items-center sm:justify-center font-sans text-white">
+          <div className="relative w-full h-full sm:max-w-md sm:h-[85vh] sm:rounded-[40px] sm:border-[6px] border-neutral-800 shadow-2xl flex flex-col overflow-hidden">
+            
+            {/* 動態背景層 */}
+            <FestiveBackground />
+
+            {/* 通知提示框 */}
+            <div className="relative z-50">
+              {showCopySuccess && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-emerald-500/90 backdrop-blur-md text-white px-5 py-2.5 rounded-full text-sm font-bold shadow-[0_4px_20px_rgba(16,185,129,0.3)] transition-all">
+                  連結已複製，快貼去群組請款！
+                </div>
+              )}
+              {errorMsg && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-rose-500/90 backdrop-blur-md text-white w-[90%] px-4 py-3 rounded-2xl text-sm font-bold shadow-[0_4px_20px_rgba(225,29,72,0.3)] flex items-center gap-3">
+                  <Icon name="alert" className="w-5 h-5 shrink-0" />
+                  <span>{errorMsg}</span>
+                </div>
+              )}
+            </div>
+
+            {/* 頂部 Header */}
+            <div className="pt-10 pb-4 px-5 flex justify-between items-center relative z-10 border-b border-white/5">
+              <div>
+                <h1 className="text-2xl font-black text-white tracking-wider flex items-center gap-2 drop-shadow-md">
+                  {activeTab === 'scores' && '總結戰報'}
+                  {activeTab === 'play' && '上桌記分'}
+                  {activeTab === 'history' && '查閱舊帳'}
+                </h1>
+                <p className="text-amber-500/80 text-[10px] font-black tracking-widest mt-1 uppercase">Year of the Horse</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setShowRules(true)} className="w-10 h-10 rounded-full glass-panel flex items-center justify-center active-scale transition-transform text-white/80">
+                  <Icon name="info" className="w-5 h-5" />
+                </button>
+                <button onClick={exportData} className="w-10 h-10 rounded-full glass-panel flex items-center justify-center active-scale transition-transform text-white/80">
+                  <Icon name="share" className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* 主內容區 */}
+            <div className="flex-1 flex flex-col relative z-10 overflow-hidden">
+              
+              {/* --- Tab 1: 戰報 --- */}
+              {activeTab === 'scores' && (
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-4">
+                  {[...players].sort((a, b) => b.score - a.score).map((p, idx) => (
+                    <div key={p.id} className="glass-panel rounded-2xl p-5 flex items-center justify-between shadow-lg">
+                      <div className="flex items-center gap-4">
+                        <div className={`w-8 text-center font-black ${idx === 0 ? 'text-amber-400 text-3xl drop-shadow-[0_0_8px_rgba(251,191,36,0.5)]' : 'text-white/40 text-xl'}`}>
+                          {idx === 0 ? <Icon name="trophy" className="w-7 h-7 mx-auto" /> : idx + 1}
+                        </div>
+                        <div className="text-lg font-bold tracking-wide">{p.name}</div>
+                      </div>
+                      <div className={`text-3xl font-black tracking-tighter ${p.score === 0 ? 'text-white/30' : p.score > 0 ? 'text-emerald-400 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]' : 'text-rose-400 drop-shadow-[0_0_8px_rgba(225,29,72,0.3)]'}`}>
+                        {p.score > 0 ? `+${p.score}` : p.score}
+                      </div>
+                    </div>
+                  ))}
+                  <button onClick={resetAll} className="mt-8 mx-auto flex items-center gap-2 text-white/20 text-xs font-bold hover:text-rose-400 transition-colors py-4">
+                    <Icon name="refresh" className="w-4 h-4" /> 洗牌歸零
+                  </button>
+                </div>
+              )}
+
+              {/* --- Tab 2: 記分 (高密度 iOS 控制中心風格，保證不需滑動) --- */}
+              {activeTab === 'play' && (
+                <div className="flex-1 flex flex-col px-4 pt-3 pb-24 justify-between">
+                  {/* 玩家列表 */}
+                  <div className="space-y-2.5">
+                    {INITIAL_PLAYERS.map(base => {
+                      const id = base.id;
+                      const p = players.find(x => x.id === id);
+                      return (
+                        <div key={id} className="glass-panel rounded-2xl p-2.5 flex items-center justify-between shadow-md relative overflow-hidden">
+                          {/* 如果有老二，透出淡淡的金光 */}
+                          {twoCounts[id] > 0 && <div className="absolute inset-0 bg-amber-500/5 pointer-events-none"></div>}
+                          
+                          {/* 左側：名字與老二狀態 */}
+                          <div className="flex flex-col pl-2 gap-1.5 z-10">
+                            <span className="font-bold text-white tracking-wide">{p.name}</span>
+                            <button 
+                              onClick={() => toggleTwoCount(id)}
+                              className={`px-2.5 py-0.5 rounded-md text-[10px] font-black tracking-wider transition-colors border w-max ${twoCounts[id] > 0 ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 shadow-[0_0_8px_rgba(251,191,36,0.3)]' : 'bg-black/30 text-white/30 border-white/5'}`}
+                            >
+                              {twoCounts[id] > 0 ? `🔥 帶老二 × ${twoCounts[id]}` : '沒留老二'}
+                            </button>
+                          </div>
+                          
+                          {/* 右側：高密度加減控制 */}
+                          <div className="flex items-center gap-1.5 bg-black/40 p-1.5 rounded-xl border border-white/5 z-10">
+                            <button onClick={() => handleCardChange(id, -1)} className="w-11 h-11 rounded-lg bg-white/5 active-scale flex items-center justify-center text-white/70">
+                              <Icon name="minus" />
+                            </button>
+                            <div className="w-7 text-center text-2xl font-black font-mono tracking-tighter">{currentCards[id]}</div>
+                            <button onClick={() => handleCardChange(id, 1)} className="w-11 h-11 rounded-lg bg-white/5 active-scale flex items-center justify-center text-white/70">
+                              <Icon name="plus" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* 底部結算控制 (緊湊排列) */}
+                  <div className="mt-4 space-y-3">
+                    <button 
+                      onClick={() => setWinnerTwoCount(v => (v + 1) % 5)}
+                      className={`w-full py-3.5 rounded-xl text-xs font-bold transition-all border flex items-center justify-center gap-2 ${winnerTwoCount > 0 ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'glass-panel text-white/40'}`}
+                    >
+                      <Icon name="zap" className="w-4 h-4" />
+                      {winnerTwoCount > 0 ? `大招！贏家老二結尾 × ${winnerTwoCount} (全場翻倍)` : '贏家一般牌型結尾 (無特殊加成)'}
+                    </button>
+                    
+                    <button 
+                      onClick={calculateRound}
+                      className="w-full py-4 rounded-xl font-black text-lg bg-gradient-to-r from-red-600 to-red-700 active:from-red-700 active:to-red-800 border border-red-500/50 text-white shadow-[0_4px_20px_rgba(220,38,38,0.4)] active-scale transition-all flex items-center justify-center"
+                    >
+                      結算本局收錢
+                    </button>
+                    <p className="text-center text-[10px] text-white/30 font-bold tracking-widest">必須剛好一人脫手（0張）才能結算</p>
+                  </div>
+                </div>
+              )}
+
+              {/* --- Tab 3: 歷史 --- */}
+              {activeTab === 'history' && (
+                <div className="flex-1 overflow-y-auto custom-scrollbar p-5 space-y-4">
+                  {history.length > 0 && (
+                    <button onClick={() => { if(window.confirm("要收回剛剛那一局的帳目嗎？")) undoLast(); }} className="w-full py-3.5 mb-2 rounded-xl bg-amber-500/10 text-amber-400 font-bold text-sm border border-amber-500/20 active-scale flex justify-center items-center gap-2">
+                      <Icon name="undo" className="w-4 h-4" /> 撤銷最新一局
+                    </button>
+                  )}
+                  {history.length === 0 ? (
+                    <div className="text-center text-white/20 py-12 font-bold tracking-widest text-sm">目前桌面上很乾淨<br/>還沒有任何交戰紀錄</div>
+                  ) : (
+                    history.map(record => (
+                      <div key={record.id} className="glass-panel rounded-2xl p-4">
+                        <div className="flex justify-between items-center mb-3 pb-3 border-b border-white/5">
+                          <span className="text-white/40 text-[11px] font-bold tracking-wider">{record.time}</span>
+                          {record.isExtreme && <span className="bg-gradient-to-r from-rose-500 to-red-500 text-white text-[10px] px-2.5 py-1 rounded shadow-sm font-black">老二結尾加成</span>}
+                        </div>
+                        <div className="grid grid-cols-4 gap-2 text-center">
+                          {INITIAL_PLAYERS.map(p => {
+                            const s = record.scores[p.id];
+                            return (
+                              <div key={p.id}>
+                                <div className="text-white/40 text-[10px] mb-1 font-bold">{p.name}</div>
+                                <div className={`font-black text-sm ${s === 0 ? 'text-white/20' : s > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {s > 0 ? `+${s}` : s}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 底部浮動導航列 (iOS Dock 風格) */}
+            <div className="absolute bottom-0 w-full z-20 pb-safe pt-2 bg-neutral-950/80 backdrop-blur-xl border-t border-white/5">
+              <div className="flex justify-around items-center px-4">
+                <button onClick={() => setActiveTab('scores')} className={`flex flex-col items-center gap-1.5 transition-colors w-16 ${activeTab === 'scores' ? 'text-amber-400' : 'text-white/30'}`}>
+                  <Icon name="trophy" className="w-5 h-5" />
+                  <span className="text-[10px] font-bold tracking-wider">戰報</span>
+                </button>
+                
+                {/* 中間大按鈕 */}
+                <button onClick={() => setActiveTab('play')} className="relative -top-5">
+                  <div className={`w-14 h-14 rounded-full flex items-center justify-center transition-all shadow-lg border-2 ${activeTab === 'play' ? 'bg-red-600 border-red-500 text-white scale-105 shadow-[0_4px_20px_rgba(220,38,38,0.5)]' : 'bg-neutral-800 border-neutral-700 text-white/40'}`}>
+                    <Icon name="gamepad" className="w-6 h-6" />
+                  </div>
+                </button>
+                
+                <button onClick={() => setActiveTab('history')} className={`flex flex-col items-center gap-1.5 transition-colors w-16 ${activeTab === 'history' ? 'text-amber-400' : 'text-white/30'}`}>
+                  <Icon name="history" className="w-5 h-5" />
+                  <span className="text-[10px] font-bold tracking-wider">明細</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 規則解說 Modal (毛玻璃覆蓋) */}
+            {showRules && (
+              <div className="absolute inset-0 z-50 flex items-center justify-center px-6">
+                <div className="absolute inset-0 bg-black/70 backdrop-blur-md" onClick={() => setShowRules(false)} />
+                <div className="glass-panel border-white/10 p-7 rounded-[32px] w-full relative z-10 shadow-2xl">
+                  <button onClick={() => setShowRules(false)} className="absolute top-5 right-5 w-8 h-8 flex items-center justify-center bg-white/5 rounded-full text-white/50 hover:text-white transition-colors">
+                    <Icon name="x" className="w-5 h-5" />
+                  </button>
+                  <h3 className="text-xl font-black text-white mb-6 flex items-center gap-2">
+                    <Icon name="info" className="text-amber-400" />
+                    記分規則解說
+                  </h3>
+                  <div className="space-y-5 text-[13px] text-white/70 leading-relaxed">
+                    <div>
+                      <strong className="text-white block mb-1 tracking-wide">🎯 基礎張數計算</strong>
+                      剩餘 1-7 張維持原分數，若剩餘 <span className="text-amber-400 font-bold">8 張以上（含）</span> 則直接翻倍 (x2)。
+                    </div>
+                    <div>
+                      <strong className="text-white block mb-1 tracking-wide">🃏 輸家含老二</strong>
+                      結算時手上有老二，每留 1 張翻 1 倍。例如：手裡握著 2 張老二就是直接 <span className="text-amber-400 font-bold">x4 倍</span>。
+                    </div>
+                    <div className="bg-red-950/30 p-3 rounded-xl border border-red-900/50">
+                      <strong className="text-rose-400 block mb-1 tracking-wide">⚡ 贏家老二脫手 (大招)</strong>
+                      若贏家最後一牌打出老二，全場輸家的總分再 <span className="text-rose-400 font-bold">全部翻倍</span>。這是極度危險的傾家蕩產機制，請謹慎使用。
+                    </div>
+                  </div>
+                  <button onClick={() => setShowRules(false)} className="w-full mt-8 bg-white/10 hover:bg-white/20 py-3.5 rounded-xl font-bold text-white transition-colors tracking-widest">
+                    我看懂了
+                  </button>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
